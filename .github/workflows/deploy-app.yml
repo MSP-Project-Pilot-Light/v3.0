@@ -1,0 +1,102 @@
+name: Deploy App to CodeDeploy
+
+on:
+  push:
+    branches:
+      - main # main 브랜치 푸시 시 실행
+    paths:
+      - 'apps/app/**'
+      - 'packages/**'
+      - 'scripts/**'  
+      - '.github/workflows/deploy-app.yml'
+  workflow_dispatch:  # 수동 실행 가능
+
+# OIDC 사용을 위한 권한 설정
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ap-northeast-2
+  S3_BUCKET: plcr-s3-an2-app-artifacts
+  CODEDEPLOY_APP: plcr-codedeploy-an2-app
+  CODEDEPLOY_DG: plcr-dg-an2-app
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build App
+        run: npm run build:app
+        env:
+          NODE_ENV: production
+      
+      - name: Prepare deployment package
+        run: |
+          cd apps/app
+          mkdir -p deploy-package
+          
+          # 빌드 결과물 복사
+          cp -r .next deploy-package/
+          cp -r public deploy-package/ 2>/dev/null || true
+          cp package.json deploy-package/
+          cp next.config.js deploy-package/ 2>/dev/null || true
+          cp next.config.mjs deploy-package/ 2>/dev/null || true
+          
+          # 루트 node_modules 복사 (Monorepo 의존성)
+          cp -r ../../node_modules deploy-package/
+          
+          # 배포 스크립트 복사
+          mkdir -p deploy-package/scripts
+          cp ../../scripts/stop_application.sh deploy-package/scripts/
+          cp ../../scripts/start_application.sh deploy-package/scripts/
+          cp ../../scripts/validate_service.sh deploy-package/scripts/
+          
+          # appspec.yml 복사
+          cp appspec.yml deploy-package/
+          
+          # zip 생성
+          cd deploy-package
+          zip -r ../../../app.zip .
+      
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_APP_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Upload to S3
+        run: |
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          aws s3 cp app.zip s3://${{ env.S3_BUCKET }}/deployments/app-${TIMESTAMP}.zip
+          aws s3 cp app.zip s3://${{ env.S3_BUCKET }}/latest/app.zip
+      
+      - name: Deploy to CodeDeploy
+        run: |
+          aws deploy create-deployment \
+            --application-name ${{ env.CODEDEPLOY_APP }} \
+            --deployment-group-name ${{ env.CODEDEPLOY_DG }} \
+            --s3-location bucket=${{ env.S3_BUCKET }},key=latest/app.zip,bundleType=zip \
+            --deployment-config-name CodeDeployDefault.OneAtATime \
+            --description "Deployed from GitHub Actions - ${{ github.sha }}"
+      
+      - name: Deployment Summary
+        run: |
+          echo "✅ Deployment triggered!"
+          echo "📦 Artifact: s3://${{ env.S3_BUCKET }}/latest/app.zip"
+          echo "🚀 CodeDeploy App: ${{ env.CODEDEPLOY_APP }}"
+          echo "📋 Deployment Group: ${{ env.CODEDEPLOY_DG }}"
+          echo "🔗 Commit: ${{ github.sha }}"

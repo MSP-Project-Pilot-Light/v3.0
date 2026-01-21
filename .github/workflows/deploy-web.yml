@@ -1,0 +1,79 @@
+name: Deploy Web to S3 + CloudFront
+
+on:
+  push:
+    branches:
+      - main # main 브랜치 푸시 시 실행
+    paths:
+      - 'apps/web/**'
+      - '.github/workflows/deploy-web.yml'
+  workflow_dispatch:  # 수동 실행 가능
+
+# OIDC 사용을 위한 권한 설정
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-web:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build Web (Static Export)
+        run: npm run build:web
+        env:
+          NODE_ENV: production
+      
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ap-northeast-2
+      
+      - name: Upload to S3 Seoul
+        run: |
+          aws s3 sync apps/web/out/ s3://plcr-s3-web-an2/ --delete
+      
+      - name: Invalidate CloudFront Cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id E2R4D3647K4SKR \
+            --paths "/*"
+      
+      # CRR 복제 대기
+      - name: Wait for CRR
+        run: sleep 30
+
+      # 도쿄용 config.js 덮어쓰기
+      - name: Upload DR config to Tokyo
+        run: |
+          cat > /tmp/config.js << 'EOF'
+          window.__PLCR_CONFIG__ = {
+            API_URL: "https://megaticket.click",
+            AWS_REGION: "ap-northeast-1",
+            PROJECT: "plcr",
+            ENVIRONMENT: "dr"
+          };
+          EOF
+          aws s3 cp /tmp/config.js s3://plcr-s3-web-an1/config.js --region ap-northeast-1
+
+      
+      - name: Deployment Summary
+        run: |
+          echo "✅ Deployment completed!"
+          echo "📦 Bucket: s3://plcr-s3-web-an2/"
+          echo "🌐 Region: ap-northeast-2 (Seoul)"
+          echo "🔄 CloudFront: Cache invalidated"
+          echo "🔄 CRR: Will replicate to plcr-s3-web-an1 (Tokyo DR)"
