@@ -5,7 +5,7 @@ on:
     branches:
       - cognito
     paths:
-      - 'v3.0/terraform/cognito/**'
+      - '/terraform/cognito/**'
   workflow_dispatch:
     inputs:
       action:
@@ -46,14 +46,13 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false
-      
-      # Global 배포
+    
       - name: Terraform Init (Global)
-        working-directory: ./v3.0/terraform/cognito/global
+        working-directory: ./terraform/cognito/global
         run: terraform init
 
       - name: Terraform Action (Global)
-        working-directory: ./v3.0/terraform/cognito/global
+        working-directory: ./terraform/cognito/global
         run: |
           if [ "${{ github.event.inputs.action }}" == "destroy" ]; then
             terraform destroy -auto-approve
@@ -63,13 +62,12 @@ jobs:
             terraform plan
           fi
       
-      # Seoul 배포
       - name: Terraform Init (Seoul)
-        working-directory: ./v3.0/terraform/cognito/seoul
+        working-directory: ./terraform/cognito/seoul
         run: terraform init
 
       - name: Terraform Action (Seoul)
-        working-directory: ./v3.0/terraform/cognito/seoul
+        working-directory: ./terraform/cognito/seoul
         run: |
           if [ "${{ github.event.inputs.action }}" == "destroy" ]; then
             terraform destroy -auto-approve
@@ -79,13 +77,12 @@ jobs:
             terraform plan
           fi
       
-      # Tokyo 배포
       - name: Terraform Init (Tokyo)
-        working-directory: ./v3.0/terraform/cognito/tokyo
+        working-directory: ./terraform/cognito/tokyo
         run: terraform init
 
       - name: Terraform Action (Tokyo)
-        working-directory: ./v3.0/terraform/cognito/tokyo
+        working-directory: ./terraform/cognito/tokyo
         run: |
           if [ "${{ github.event.inputs.action }}" == "destroy" ]; then
             terraform destroy -auto-approve
