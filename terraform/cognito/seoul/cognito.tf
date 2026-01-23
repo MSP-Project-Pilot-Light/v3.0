@@ -15,6 +15,10 @@ resource "aws_cognito_user_pool" "seoul" {
   
   mfa_configuration = "OPTIONAL"
   
+  software_token_mfa_configuration {
+    enabled = true
+  }
+
   account_recovery_setting {
     recovery_mechanism {
       name     = "verified_email"
