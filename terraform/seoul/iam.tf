@@ -151,6 +151,43 @@ resource "aws_iam_role_policy" "s3_artifacts_policy" {
 }
 
 # -----------------------------------------------------------------------------
+# ✅ (추가) EC2 → S3 로그 버킷 업로드 권한 (plcr-s3-an2-log/ec2/*)
+# -----------------------------------------------------------------------------
+resource "aws_iam_role_policy" "s3_log_write_policy" {
+  name = "${var.project_name}-pol-${var.region_code}-s3-log-write"
+  role = aws_iam_role.ec2_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      # 업로드 권한
+      {
+        Sid    = "AllowPutLogObjects"
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:AbortMultipartUpload"
+        ]
+        Resource = "arn:aws:s3:::plcr-s3-an2-log/ec2/*"
+      },
+
+      # (선택이지만 추천) prefix 범위 내 list 권한 (SDK/CLI가 내부적으로 list 쓰는 경우 대비)
+      {
+        Sid    = "AllowListLogBucketPrefix"
+        Effect = "Allow"
+        Action = ["s3:ListBucket"]
+        Resource = "arn:aws:s3:::plcr-s3-an2-log"
+        Condition = {
+          StringLike = {
+            "s3:prefix" = ["ec2/*"]
+          }
+        }
+      }
+    ]
+  })
+}
+
+# -----------------------------------------------------------------------------
 # Instance Profile
 # -----------------------------------------------------------------------------
 resource "aws_iam_instance_profile" "ec2_profile" {
